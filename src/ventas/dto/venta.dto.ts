@@ -21,9 +21,26 @@ export class DashboardStatsDto {
   totalMes: number;
 }
 
+import { IsOptional, IsString } from 'class-validator';
+
 export class FiltrosVentaDto {
+  @IsOptional()
+  @IsString()
   sucursal?: string;
+
+  @IsOptional()
+  @IsString()
   formaPago?: string;
+
+  @IsOptional()
+  @IsString()
   periodo?: string;
+
+  @IsOptional()
+  @IsString()
   mes?: string;
+
+  @IsOptional()
+  @IsString()
+  dia?: string;
 }

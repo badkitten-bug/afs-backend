@@ -1,12 +1,11 @@
 import { Controller, Get, Query } from '@nestjs/common';
+import { VentasService } from './ventas.service';
 import { VentasMockService } from './ventas-mock.service';
 import { FiltrosVentaDto } from './dto/venta.dto';
 
 @Controller('ventas')
 export class VentasController {
-  // Cambiar a VentasMockService para usar datos de prueba
-  // Cuando tengas la BD lista, cambia a VentasService
-  constructor(private readonly ventasService: VentasMockService) {}
+  constructor(private readonly ventasService: VentasService) {}
 
   @Get('dashboard')
   async getDashboard(@Query() filtros: FiltrosVentaDto) {
@@ -31,5 +30,10 @@ export class VentasController {
   @Get('formas-pago')
   async getFormasPago() {
     return this.ventasService.getFormasPago();
+  }
+
+  @Get('anios')
+  async getYears() {
+    return this.ventasService.getYears();
   }
 }
