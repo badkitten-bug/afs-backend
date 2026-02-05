@@ -2,7 +2,9 @@ export class VentaDto {
   sucursal: string;
   docCliente: string;
   cliente: string;
-  codReferencia: string;
+  codReferencia?: string;
+  codSerie: string;
+  codNumero: string;
   formaPago: string;
   fechaHora: Date;
   montos: number;

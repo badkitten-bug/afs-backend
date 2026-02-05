@@ -1,6 +1,5 @@
 import { Controller, Get, Query } from '@nestjs/common';
 import { VentasService } from './ventas.service';
-import { VentasMockService } from './ventas-mock.service';
 import { FiltrosVentaDto } from './dto/venta.dto';
 
 @Controller('ventas')

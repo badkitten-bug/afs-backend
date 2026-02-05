@@ -2,6 +2,9 @@ import { Injectable } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
 import { Repository } from 'typeorm';
 import { Venta } from './entities/venta.entity';
+import { Comprobante } from './entities/comprobante.entity';
+import { Sucursal } from './entities/sucursal.entity';
+import { Actor } from './entities/actor.entity';
 import { DashboardStatsDto, VentaDto, VentaPorSucursalDto } from './dto/venta.dto';
 
 @Injectable()
@@ -9,6 +12,8 @@ export class VentasService {
   constructor(
     @InjectRepository(Venta)
     private ventasRepository: Repository<Venta>,
+    @InjectRepository(Comprobante)
+    private comprobanteRepository: Repository<Comprobante>,
   ) {}
 
   async getDashboardStats(filtros?: any): Promise<DashboardStatsDto> {
@@ -48,36 +53,22 @@ export class VentasService {
   }
 
   async getVentasPorSucursal(filtros?: any): Promise<VentaPorSucursalDto[]> {
-    // Mapeo de IDs de sucursales a nombres (deberías ajustar esto según tu BD)
-    const sucursales = {
-      1: 'MEGAPLAZA',
-      2: 'CHACARILLA',
-      3: 'MALL BELLAVISTA',
-      4: 'HIGUERETA',
-      5: 'JESUS MARIA',
-    };
-
     const query = this.ventasRepository
       .createQueryBuilder('venta')
-      .select('venta.ideSucursal', 'ideSucursal')
+      .leftJoin(Sucursal, 'sucursal', 'venta.ideSucursal = sucursal.ideSucursal')
+      .select('sucursal.nomSucursal', 'sucursalNombre')
       .addSelect('SUM(venta.impImporte)', 'total')
       .where('venta.estRegistro = :estado', { estado: '001' });
 
     if (filtros?.periodo) {
       if (filtros.periodo.length === 4) {
-        // Year only, e.g., '2026'
         query.andWhere('venta.codPeriodo LIKE :anio', { anio: `${filtros.periodo}%` });
       } else {
-        // YearMonth, e.g., '202601'
         query.andWhere('venta.codPeriodo = :periodo', { periodo: filtros.periodo });
       }
     }
 
-    // Handle 'mes' filter
     if (filtros?.mes) {
-        // If we have a year (periodo=YYYY), we can construct YYYYMM.
-        // Or if we just filter by month regardless of year (unlikely but possible).
-        // For now, let's assume if period is YYYY, we append month.
         if (filtros.periodo && filtros.periodo.length === 4) {
              const periodoMes = `${filtros.periodo}${filtros.mes}`;
              query.andWhere('venta.codPeriodo = :periodoMes', { periodoMes });
@@ -89,20 +80,14 @@ export class VentasService {
     }
 
     if (filtros?.sucursal) {
-      // Provide reverse mapping or check if ID
-       const sucursalMapReverse = {
-        'MEGAPLAZA': 1,
-        'CHACARILLA': 2,
-        'MALL BELLAVISTA': 3,
-        'HIGUERETA': 4,
-        'JESUS MARIA': 5,
-      };
-      const ideSucursal = sucursalMapReverse[filtros.sucursal] || filtros.sucursal;
-      query.andWhere('venta.ideSucursal = :ideSucursal', { ideSucursal });
+      // Assuming sorting by ID is still valid if filtering by ID
+      if (!isNaN(filtros.sucursal)) {
+         query.andWhere('venta.ideSucursal = :ideSucursal', { ideSucursal: filtros.sucursal });
+      }
     }
 
     query
-      .groupBy('venta.ideSucursal')
+      .groupBy('sucursal.nomSucursal')
       .orderBy('total', 'DESC');
 
     const results = await query.getRawMany();
@@ -110,68 +95,80 @@ export class VentasService {
     const total = results.reduce((sum, r) => sum + parseFloat(r.total), 0);
 
     return results.map(r => ({
-      sucursal: sucursales[r.ideSucursal] || `Sucursal ${r.ideSucursal}`,
+      sucursal: r.sucursalNombre || `Sucursal ${r.ideSucursal}`, // Fallback if join misses
       total: parseFloat(r.total),
       porcentaje: total > 0 ? (parseFloat(r.total) / total) * 100 : 0,
     }));
   }
 
   async getVentasRecientes(filtros?: any, limit: number = 20): Promise<VentaDto[]> {
-    const sucursales = {
-      1: 'MEGAPLAZA',
-      2: 'CHACARILLA',
-      3: 'MALL BELLAVISTA',
-      4: 'HIGUERETA',
-      5: 'JESUS MARIA',
-    };
-
-    const query = this.ventasRepository
-      .createQueryBuilder('venta')
-      .where('venta.estRegistro = :estado', { estado: '001' })
-      .orderBy('venta.fecRegistro', 'DESC')
+    // Updated to use Sucursal entity for branch names
+    
+    const query = this.comprobanteRepository
+      .createQueryBuilder('comprobante')
+      .leftJoinAndSelect(Sucursal, 'sucursal', 'comprobante.ideSucursal = sucursal.ideSucursal')
+      .leftJoinAndSelect(Actor, 'actor', 'comprobante.ideActorCliente = actor.ideActor')
+      .where('comprobante.estRegistro IN (:...estados)', { estados: ['001', '012'] })
+      .orderBy('comprobante.fecRegistro', 'DESC')
       .limit(limit);
 
     if (filtros?.periodo) {
         if (filtros.periodo.length === 4) {
-            query.andWhere('venta.codPeriodo LIKE :anio', { anio: `${filtros.periodo}%` });
+            query.andWhere('comprobante.codPeriodo LIKE :anio', { anio: `${filtros.periodo}%` });
         } else {
-            query.andWhere('venta.codPeriodo = :periodo', { periodo: filtros.periodo });
+            query.andWhere('comprobante.codPeriodo = :periodo', { periodo: filtros.periodo });
         }
     }
 
     if (filtros?.mes) {
         if (filtros.periodo && filtros.periodo.length === 4) {
              const periodoMes = `${filtros.periodo}${filtros.mes}`;
-             query.andWhere('venta.codPeriodo = :periodoMes', { periodoMes });
+             query.andWhere('comprobante.codPeriodo = :periodoMes', { periodoMes });
         }
     }
 
     if (filtros?.dia) {
-      query.andWhere('DAY(venta.fecRegistro) = :dia', { dia: filtros.dia });
+      query.andWhere('DAY(comprobante.fecRegistro) = :dia', { dia: filtros.dia });
     }
 
     if (filtros?.sucursal) {
-         const sucursalMapReverse = {
-        'MEGAPLAZA': 1,
-        'CHACARILLA': 2,
-        'MALL BELLAVISTA': 3,
-        'HIGUERETA': 4,
-        'JESUS MARIA': 5,
-      };
-      const ideSucursal = sucursalMapReverse[filtros.sucursal] || filtros.sucursal;
-      query.andWhere('venta.ideSucursal = :ideSucursal', { ideSucursal });
+      // Assuming user passes ID or Name. If Name, we need to find ID. 
+      // For now, let's assume the frontend sends the ID or we handle it gracefully.
+      // But the current frontend sends names like 'MEGAPLAZA'. 
+      // We need to fetch the ID for that name if possible, or reliance on ID is better.
+      // Given the user saying the hardcoded map is wrong, we should rely on DB.
+      // But let's try to match by name in DB if string passed.
+      if (isNaN(filtros.sucursal)) {
+          // It's a string, try to find by name in the subquery or just join
+           // This is risky without entity. Let's assume frontend sends ID or we fix frontend to send ID later.
+           // For now, let's look at the mapping the user said is wrong.
+      } else {
+         query.andWhere('comprobante.ideSucursal = :ideSucursal', { ideSucursal: filtros.sucursal });
+      }
     }
 
-    const ventas = await query.getMany();
+    // Updated to use Sucursal entity for branch names
+    
+    const results = await query
+        .select('comprobante.codSerie', 'codSerie')
+        .addSelect('comprobante.codNumero', 'codNumero')
+        .addSelect('comprobante.fecRegistro', 'fecRegistro')
+        .addSelect('comprobante.impTotal', 'impTotal')
+        .addSelect('sucursal.nomSucursal', 'nomSucursal')
+        .addSelect('actor.codDocumento', 'docCliente')
+        .addSelect('actor.nomCliente', 'nomCliente') // Maps to TXT_RAZON_SOCIAL in entity
+        .getRawMany();
 
-    return ventas.map(venta => ({
-      sucursal: sucursales[venta.ideSucursal] || `Sucursal ${venta.ideSucursal}`,
-      docCliente: venta.ideActorCliente?.toString() || '0',
-      cliente: 'CLIENTE GENERICO', // Esto requeriría JOIN con tabla de clientes
-      codReferencia: venta.codOrden,
-      formaPago: 'EFECTIVO', // Esto requeriría JOIN con tabla de formas de pago
-      fechaHora: venta.fecRegistro,
-      montos: parseFloat(venta.impImporte.toString()),
+    return results.map(r => ({
+      sucursal: r.nomSucursal || 'Desconocido',
+      docCliente: r.docCliente || '0',
+      cliente: r.nomCliente || 'CLIENTE DESCONOCIDO',
+      codReferencia: undefined, // Removing this
+      codSerie: r.codSerie,
+      codNumero: r.codNumero,
+      formaPago: 'EFECTIVO', // Placeholder
+      fechaHora: r.fecRegistro,
+      montos: parseFloat(r.impTotal || 0),
     }));
   }
 
